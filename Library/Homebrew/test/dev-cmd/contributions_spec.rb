@@ -568,10 +568,12 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     separator = "\x1f"
     record_separator = "\x1e"
     merge = [
-      "merge", "base pull-request", "Alice", "alice@example.com",
+      "merge", "base pull-request", "Alice", "alice@example.com", "Alice", "alice@example.com",
       "Merge pull request #123 from alice/topic"
     ].join(separator)
-    pull_request = ["pull-request", "base", "Alice", "alice@example.com", "Change something"].join(separator)
+    pull_request = [
+      "pull-request", "base", "Alice", "alice@example.com", "Alice", "alice@example.com", "Change something"
+    ].join(separator)
     git_log = "#{merge}#{record_separator}#{pull_request}#{record_separator}"
     allow(Utils).to receive(:safe_popen_read).and_return(git_log)
     allow(GitHub).to receive(:search_approved_pull_requests_in_user_or_organisation).and_return([])
@@ -602,10 +604,13 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     separator = "\x1f"
     record_separator = "\x1e"
     merge = [
-      "merge", "base pull-request", "Alice", "alice@example.com",
+      "merge", "base pull-request", "Alice", "alice@example.com", "Alice", "alice@example.com",
       "Merge pull request #123 from Homebrew/topic"
     ].join(separator)
-    pull_request = ["pull-request", "base", "BrewTestBot", "test-bot@example.com", "Change something"].join(separator)
+    pull_request = [
+      "pull-request", "base", "BrewTestBot", "test-bot@example.com", "BrewTestBot", "test-bot@example.com",
+      "Change something"
+    ].join(separator)
     git_log = "#{merge}#{record_separator}#{pull_request}#{record_separator}"
     allow(Utils).to receive(:safe_popen_read).and_return(git_log)
     allow(GitHub).to receive(:search_approved_pull_requests_in_user_or_organisation).and_return([])
@@ -634,15 +639,15 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     separator = "\x1f"
     record_separator = "\x1e"
     merge = [
-      "merge", "base pull-request", "Alice Example", "alice@example.com",
+      "merge", "base pull-request", "Alice Example", "alice@example.com", "Alice Example", "alice@example.com",
       "Merge pull request #123 from Homebrew/topic"
     ].join(separator)
     pull_request = [
-      "pull-request", "base", "Bob Example", "bob@example.com",
+      "pull-request", "base", "Bob Example", "bob@example.com", "Bob Example", "bob@example.com",
       "Change something\n\nCo-authored-by: Alice Example <123+alice@users.noreply.github.com>"
     ].join(separator)
     coauthored = [
-      "coauthored", "base", "Someone Else", "someone@example.com",
+      "coauthored", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change another thing\n\nCo-authored-by: Bob Example <bob@example.com>"
     ].join(separator)
 
@@ -662,11 +667,34 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     )
   end
 
+  it "attributes amended committers as coauthors" do
+    command = described_class.new(["--maintainer-report-csv=2026-1"])
+    separator = "\x1f"
+    record_separator = "\x1e"
+    base = ["base", "", "Maintainer", "maintainer@example.com", "Maintainer", "maintainer@example.com", "Base"]
+           .join(separator)
+    amended = [
+      "amended", "base", "Alice Example", "alice@example.com", "Joe", "joe@example.com", "Change something"
+    ].join(separator)
+    merge = [
+      "merge", "base amended", "Alice Example", "alice@example.com", "Bob", "bob@example.com",
+      "Merge pull request #123 from Homebrew/topic"
+    ].join(separator)
+
+    counts = command.parse_git_log(
+      "#{merge}#{record_separator}#{amended}#{record_separator}#{base}#{record_separator}",
+      { "alice" => "Alice Example", "joe" => "Joe Example" },
+      github_identities: { "alice" => ["alice@example.com"], "joe" => ["joe@example.com"] },
+    )
+
+    expect(counts.fetch("joe").fetch(:coauthor)).to eq(1)
+  end
+
   it "matches commits under a GitHub profile's name and email for a username" do
     command = described_class.new(["--user=alice", "--repositories=Homebrew/homebrew-core"])
     repository = "Homebrew/homebrew-core"
     commit = [
-      "commit", "base", "Someone Else", "someone@example.com",
+      "commit", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change something\n\nCo-authored-by: Alice Example <a.example@example.com>"
     ].join("\x1f")
     allow(Utils).to receive(:safe_popen_read).and_return("#{commit}\x1e")
@@ -692,11 +720,11 @@ RSpec.describe Homebrew::DevCmd::Contributions do
   it "skips GitHub profile names shared by multiple requested users" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
     ambiguous = [
-      "ambiguous", "base", "Someone Else", "someone@example.com",
+      "ambiguous", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change something\n\nCo-authored-by: Alex <unknown@example.com>"
     ].join("\x1f")
     by_email = [
-      "by-email", "base", "Someone Else", "someone@example.com",
+      "by-email", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change another thing\n\nCo-authored-by: Alex <bob@example.com>"
     ].join("\x1f")
 
@@ -712,7 +740,7 @@ RSpec.describe Homebrew::DevCmd::Contributions do
   it "prefers an exact email match over a GitHub profile name" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
     commit = [
-      "commit", "base", "Someone Else", "someone@example.com",
+      "commit", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change something\n\nCo-authored-by: Alex <bob@example.com>"
     ].join("\x1f")
 
@@ -728,11 +756,11 @@ RSpec.describe Homebrew::DevCmd::Contributions do
   it "matches GitHub no-reply usernames but not other emails' local parts" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
     unrelated = [
-      "unrelated", "base", "Someone Else", "someone@example.com",
+      "unrelated", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change something\n\nCo-authored-by: Other Alice <alice@unrelated.example.com>"
     ].join("\x1f")
     noreply = [
-      "noreply", "base", "Someone Else", "someone@example.com",
+      "noreply", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change another thing\n\nCo-authored-by: A. Example <123+alice@users.noreply.github.com>"
     ].join("\x1f")
 
